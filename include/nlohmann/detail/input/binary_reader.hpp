@@ -1406,8 +1406,27 @@ class binary_reader
             case 0xDA: // str 16
             case 0xDB: // str 32
             {
-                string_t s;
-                return get_msgpack_string(s) && sax->string(s);
+		// string_t s;
+		// return get_msgpack_string (s) && sax->string (s);
+
+		size_t size{0};
+		uint8_t type{0};
+		if (!get_asmsgpack_strsize_strtype (size, type)) {
+		    return false;
+		}
+		switch (type) {
+		case 3:
+		{
+		    string_t s;
+		    return get_string(input_format_t::msgpack, size, s) && sax->string (s);
+		}
+		case 4:
+		{
+		    binary_t b;
+		    return get_binary (input_format_t::msgpack, size, b) && sax->binary (b);
+		}
+		}
+		return false;
             }
 
             case 0xC0: // nil
@@ -1564,18 +1583,35 @@ class binary_reader
     }
 
     /*!
-    @brief reads a MessagePack string
+    @brief reads a Aerospike MessagePack string
 
-    This function first reads starting bytes to determine the expected
-    string length and then copies this number of bytes into a string.
-
+    Read a string, contained within an "Aerospike msgpack" string
     @param[out] result  created string
 
     @return whether string creation completed
     */
     bool get_msgpack_string(string_t& result)
     {
-        if (JSON_HEDLEY_UNLIKELY(!unexpect_eof(input_format_t::msgpack, "string")))
+	size_t size{0};
+	uint8_t type{0};
+	return get_asmsgpack_strsize_strtype (size, type)
+	    && (type == 3)
+	    && get_string(input_format_t::msgpack, size, result);
+    }
+
+    /*!
+    @brief reads the size and type of an Aerospike MessagePack string.
+
+    This function first reads starting bytes to determine the expected
+    string length and then copies this number of bytes into a string.
+
+    @param[out] result  created string
+
+    @return whether populated both variables (and advanced cursor)
+    */
+    bool get_asmsgpack_strsize_strtype(std::size_t& size, uint8_t& type)
+    {
+        if (JSON_HEDLEY_UNLIKELY(!unexpect_eof(input_format_t::msgpack, "asmsgpack_strsize_strtype")))
         {
             return false;
         }
@@ -1616,25 +1652,35 @@ class binary_reader
             case 0xBE:
             case 0xBF:
             {
-                return get_string(input_format_t::msgpack, static_cast<unsigned int>(current) & 0x1Fu, result);
+		size = (static_cast<unsigned int>(current) & 0x1Fu) - 1;
+		break;
             }
 
             case 0xD9: // str 8
             {
                 std::uint8_t len{};
-                return get_number(input_format_t::msgpack, len) && get_string(input_format_t::msgpack, len, result);
+		if (!get_number(input_format_t::msgpack, len))
+		    return false;
+		size = len - 1;
+		break;
             }
 
             case 0xDA: // str 16
             {
                 std::uint16_t len{};
-                return get_number(input_format_t::msgpack, len) && get_string(input_format_t::msgpack, len, result);
+		if (!get_number(input_format_t::msgpack, len))
+		    return false;
+		size = len - 1;
+		break;
             }
 
             case 0xDB: // str 32
             {
                 std::uint32_t len{};
-                return get_number(input_format_t::msgpack, len) && get_string(input_format_t::msgpack, len, result);
+		if (!get_number(input_format_t::msgpack, len))
+		    return false;
+		size = len - 1;
+		break;
             }
 
             default:
@@ -1644,6 +1690,9 @@ class binary_reader
                                         exception_message(input_format_t::msgpack, concat("expected length specification (0xA0-0xBF, 0xD9-0xDB); last byte: 0x", last_token), "string"), nullptr));
             }
         }
+	type = get ();
+	return true;
+
     }
 
     /*!

@@ -547,7 +547,7 @@ class binary_writer
             case value_t::string:
             {
                 // step 1: write control byte and the string length
-                const auto N = j.m_data.m_value.string->size();
+                const auto N = 1 + j.m_data.m_value.string->size();
                 if (N <= 31)
                 {
                     // fixstr
@@ -571,6 +571,8 @@ class binary_writer
                     oa->write_character(to_char_type(0xDB));
                     write_number(static_cast<std::uint32_t>(N));
                 }
+		// step 1.5: write the particle byte.
+		oa->write_character (to_char_type (0x03));
 
                 // step 2: write the string
                 oa->write_characters(
@@ -611,84 +613,38 @@ class binary_writer
 
             case value_t::binary:
             {
-                // step 0: determine if the binary type has a set subtype to
-                // determine whether or not to use the ext or fixext types
-                const bool use_ext = j.m_data.m_value.binary->has_subtype();
 
-                // step 1: write control byte and the byte string length
-                const auto N = j.m_data.m_value.binary->size();
-                if (N <= (std::numeric_limits<std::uint8_t>::max)())
+                // step 1: write control byte and the string length
+                const auto N = 1 + j.m_data.m_value.binary->size();
+                if (N <= 31)
                 {
-                    std::uint8_t output_type{};
-                    bool fixed = true;
-                    if (use_ext)
-                    {
-                        switch (N)
-                        {
-                            case 1:
-                                output_type = 0xD4; // fixext 1
-                                break;
-                            case 2:
-                                output_type = 0xD5; // fixext 2
-                                break;
-                            case 4:
-                                output_type = 0xD6; // fixext 4
-                                break;
-                            case 8:
-                                output_type = 0xD7; // fixext 8
-                                break;
-                            case 16:
-                                output_type = 0xD8; // fixext 16
-                                break;
-                            default:
-                                output_type = 0xC7; // ext 8
-                                fixed = false;
-                                break;
-                        }
-
-                    }
-                    else
-                    {
-                        output_type = 0xC4; // bin 8
-                        fixed = false;
-                    }
-
-                    oa->write_character(to_char_type(output_type));
-                    if (!fixed)
-                    {
-                        write_number(static_cast<std::uint8_t>(N));
-                    }
+                    // fixstr
+                    write_number(static_cast<std::uint8_t>(0xA0 | N));
+                }
+                else if (N <= (std::numeric_limits<std::uint8_t>::max)())
+                {
+                    // str 8
+                    oa->write_character(to_char_type(0xD9));
+                    write_number(static_cast<std::uint8_t>(N));
                 }
                 else if (N <= (std::numeric_limits<std::uint16_t>::max)())
                 {
-                    const std::uint8_t output_type = use_ext
-                                                     ? 0xC8 // ext 16
-                                                     : 0xC5; // bin 16
-
-                    oa->write_character(to_char_type(output_type));
+                    // str 16
+                    oa->write_character(to_char_type(0xDA));
                     write_number(static_cast<std::uint16_t>(N));
                 }
                 else if (N <= (std::numeric_limits<std::uint32_t>::max)())
                 {
-                    const std::uint8_t output_type = use_ext
-                                                     ? 0xC9 // ext 32
-                                                     : 0xC6; // bin 32
-
-                    oa->write_character(to_char_type(output_type));
+                    // str 32
+                    oa->write_character(to_char_type(0xDB));
                     write_number(static_cast<std::uint32_t>(N));
                 }
-
-                // step 1.5: if this is an ext type, write the subtype
-                if (use_ext)
-                {
-                    write_number(static_cast<std::int8_t>(j.m_data.m_value.binary->subtype()));
-                }
-
+		// step 1.5: write the particle byte.
+		oa->write_character (to_char_type (0x04));
                 // step 2: write the byte string
                 oa->write_characters(
                     reinterpret_cast<const CharType*>(j.m_data.m_value.binary->data()),
-                    N);
-
+                    N-1);
                 break;
             }
 

@@ -3366,71 +3366,71 @@ NLOHMANN_JSON_NAMESPACE_END
 // SPDX-License-Identifier: MIT
 
 #ifndef INCLUDE_NLOHMANN_JSON_FWD_HPP_
-    #define INCLUDE_NLOHMANN_JSON_FWD_HPP_
+#define INCLUDE_NLOHMANN_JSON_FWD_HPP_
 
-    #include <cstdint> // int64_t, uint64_t
-    #include <map> // map
-    #include <memory> // allocator
-    #include <string> // string
-    #include <vector> // vector
+#include <cstdint> // int64_t, uint64_t
+#include <map> // map
+#include <memory> // allocator
+#include <string> // string
+#include <vector> // vector
 
-    // #include <nlohmann/detail/abi_macros.hpp>
+// #include <nlohmann/detail/abi_macros.hpp>
 
 
-    /*!
-    @brief namespace for Niels Lohmann
-    @see https://github.com/nlohmann
-    @since version 1.0.0
-    */
-    NLOHMANN_JSON_NAMESPACE_BEGIN
+/*!
+@brief namespace for Niels Lohmann
+@see https://github.com/nlohmann
+@since version 1.0.0
+*/
+NLOHMANN_JSON_NAMESPACE_BEGIN
 
-    /*!
-    @brief default JSONSerializer template argument
+/*!
+@brief default JSONSerializer template argument
 
-    This serializer ignores the template arguments and uses ADL
-    ([argument-dependent lookup](https://en.cppreference.com/w/cpp/language/adl))
-    for serialization.
-    */
-    template<typename T = void, typename SFINAE = void>
-    struct adl_serializer;
+This serializer ignores the template arguments and uses ADL
+([argument-dependent lookup](https://en.cppreference.com/w/cpp/language/adl))
+for serialization.
+*/
+template<typename T = void, typename SFINAE = void>
+struct adl_serializer;
 
-    /// a class to store JSON values
-    /// @sa https://json.nlohmann.me/api/basic_json/
-    template<template<typename U, typename V, typename... Args> class ObjectType =
-    std::map,
-    template<typename U, typename... Args> class ArrayType = std::vector,
-    class StringType = std::string, class BooleanType = bool,
-    class NumberIntegerType = std::int64_t,
-    class NumberUnsignedType = std::uint64_t,
-    class NumberFloatType = double,
-    template<typename U> class AllocatorType = std::allocator,
-    template<typename T, typename SFINAE = void> class JSONSerializer =
-    adl_serializer,
-    class BinaryType = std::vector<std::uint8_t>, // cppcheck-suppress syntaxError
-    class CustomBaseClass = void>
-    class basic_json;
+/// a class to store JSON values
+/// @sa https://json.nlohmann.me/api/basic_json/
+template<template<typename U, typename V, typename... Args> class ObjectType =
+         std::map,
+         template<typename U, typename... Args> class ArrayType = std::vector,
+         class StringType = std::string, class BooleanType = bool,
+         class NumberIntegerType = std::int64_t,
+         class NumberUnsignedType = std::uint64_t,
+         class NumberFloatType = double,
+         template<typename U> class AllocatorType = std::allocator,
+         template<typename T, typename SFINAE = void> class JSONSerializer =
+         adl_serializer,
+         class BinaryType = std::vector<std::uint8_t>, // cppcheck-suppress syntaxError
+         class CustomBaseClass = void>
+class basic_json;
 
-    /// @brief JSON Pointer defines a string syntax for identifying a specific value within a JSON document
-    /// @sa https://json.nlohmann.me/api/json_pointer/
-    template<typename RefStringType>
-    class json_pointer;
+/// @brief JSON Pointer defines a string syntax for identifying a specific value within a JSON document
+/// @sa https://json.nlohmann.me/api/json_pointer/
+template<typename RefStringType>
+class json_pointer;
 
-    /*!
-    @brief default specialization
-    @sa https://json.nlohmann.me/api/json/
-    */
-    using json = basic_json<>;
+/*!
+@brief default specialization
+@sa https://json.nlohmann.me/api/json/
+*/
+using json = basic_json<>;
 
-    /// @brief a minimal map-like container that preserves insertion order
-    /// @sa https://json.nlohmann.me/api/ordered_map/
-    template<class Key, class T, class IgnoredLess, class Allocator>
-    struct ordered_map;
+/// @brief a minimal map-like container that preserves insertion order
+/// @sa https://json.nlohmann.me/api/ordered_map/
+template<class Key, class T, class IgnoredLess, class Allocator>
+struct ordered_map;
 
-    /// @brief specialization that maintains the insertion order of object keys
-    /// @sa https://json.nlohmann.me/api/ordered_json/
-    using ordered_json = basic_json<nlohmann::ordered_map>;
+/// @brief specialization that maintains the insertion order of object keys
+/// @sa https://json.nlohmann.me/api/ordered_json/
+using ordered_json = basic_json<nlohmann::ordered_map>;
 
-    NLOHMANN_JSON_NAMESPACE_END
+NLOHMANN_JSON_NAMESPACE_END
 
 #endif  // INCLUDE_NLOHMANN_JSON_FWD_HPP_
 
@@ -10551,8 +10551,27 @@ class binary_reader
             case 0xDA: // str 16
             case 0xDB: // str 32
             {
-                string_t s;
-                return get_msgpack_string(s) && sax->string(s);
+		// string_t s;
+		// return get_msgpack_string (s) && sax->string (s);
+
+		size_t size{0};
+		uint8_t type{0};
+		if (!get_asmsgpack_strsize_strtype (size, type)) {
+		    return false;
+		}
+		switch (type) {
+		case 3:
+		{
+		    string_t s;
+		    return get_string(input_format_t::msgpack, size, s) && sax->string (s);
+		}
+		case 4:
+		{
+		    binary_t b;
+		    return get_binary (input_format_t::msgpack, size, b) && sax->binary (b);
+		}
+		}
+		return false;
             }
 
             case 0xC0: // nil
@@ -10709,18 +10728,35 @@ class binary_reader
     }
 
     /*!
-    @brief reads a MessagePack string
+    @brief reads a Aerospike MessagePack string
 
-    This function first reads starting bytes to determine the expected
-    string length and then copies this number of bytes into a string.
-
+    Read a string, contained within an "Aerospike msgpack" string
     @param[out] result  created string
 
     @return whether string creation completed
     */
     bool get_msgpack_string(string_t& result)
     {
-        if (JSON_HEDLEY_UNLIKELY(!unexpect_eof(input_format_t::msgpack, "string")))
+	size_t size{0};
+	uint8_t type{0};
+	return get_asmsgpack_strsize_strtype (size, type)
+	    && (type == 3)
+	    && get_string(input_format_t::msgpack, size, result);
+    }
+
+    /*!
+    @brief reads the size and type of an Aerospike MessagePack string.
+
+    This function first reads starting bytes to determine the expected
+    string length and then copies this number of bytes into a string.
+
+    @param[out] result  created string
+
+    @return whether populated both variables (and advanced cursor)
+    */
+    bool get_asmsgpack_strsize_strtype(std::size_t& size, uint8_t& type)
+    {
+        if (JSON_HEDLEY_UNLIKELY(!unexpect_eof(input_format_t::msgpack, "asmsgpack_strsize_strtype")))
         {
             return false;
         }
@@ -10761,25 +10797,35 @@ class binary_reader
             case 0xBE:
             case 0xBF:
             {
-                return get_string(input_format_t::msgpack, static_cast<unsigned int>(current) & 0x1Fu, result);
+		size = (static_cast<unsigned int>(current) & 0x1Fu) - 1;
+		break;
             }
 
             case 0xD9: // str 8
             {
                 std::uint8_t len{};
-                return get_number(input_format_t::msgpack, len) && get_string(input_format_t::msgpack, len, result);
+		if (!get_number(input_format_t::msgpack, len))
+		    return false;
+		size = len - 1;
+		break;
             }
 
             case 0xDA: // str 16
             {
                 std::uint16_t len{};
-                return get_number(input_format_t::msgpack, len) && get_string(input_format_t::msgpack, len, result);
+		if (!get_number(input_format_t::msgpack, len))
+		    return false;
+		size = len - 1;
+		break;
             }
 
             case 0xDB: // str 32
             {
                 std::uint32_t len{};
-                return get_number(input_format_t::msgpack, len) && get_string(input_format_t::msgpack, len, result);
+		if (!get_number(input_format_t::msgpack, len))
+		    return false;
+		size = len - 1;
+		break;
             }
 
             default:
@@ -10789,6 +10835,9 @@ class binary_reader
                                         exception_message(input_format_t::msgpack, concat("expected length specification (0xA0-0xBF, 0xD9-0xDB); last byte: 0x", last_token), "string"), nullptr));
             }
         }
+	type = get ();
+	return true;
+
     }
 
     /*!
@@ -15586,7 +15635,7 @@ class binary_writer
             case value_t::string:
             {
                 // step 1: write control byte and the string length
-                const auto N = j.m_data.m_value.string->size();
+                const auto N = 1 + j.m_data.m_value.string->size();
                 if (N <= 31)
                 {
                     // fixstr
@@ -15610,6 +15659,8 @@ class binary_writer
                     oa->write_character(to_char_type(0xDB));
                     write_number(static_cast<std::uint32_t>(N));
                 }
+		// step 1.5: write the particle byte.
+		oa->write_character (to_char_type (0x03));
 
                 // step 2: write the string
                 oa->write_characters(
@@ -15650,84 +15701,38 @@ class binary_writer
 
             case value_t::binary:
             {
-                // step 0: determine if the binary type has a set subtype to
-                // determine whether or not to use the ext or fixext types
-                const bool use_ext = j.m_data.m_value.binary->has_subtype();
 
-                // step 1: write control byte and the byte string length
-                const auto N = j.m_data.m_value.binary->size();
-                if (N <= (std::numeric_limits<std::uint8_t>::max)())
+                // step 1: write control byte and the string length
+                const auto N = 1 + j.m_data.m_value.binary->size();
+                if (N <= 31)
                 {
-                    std::uint8_t output_type{};
-                    bool fixed = true;
-                    if (use_ext)
-                    {
-                        switch (N)
-                        {
-                            case 1:
-                                output_type = 0xD4; // fixext 1
-                                break;
-                            case 2:
-                                output_type = 0xD5; // fixext 2
-                                break;
-                            case 4:
-                                output_type = 0xD6; // fixext 4
-                                break;
-                            case 8:
-                                output_type = 0xD7; // fixext 8
-                                break;
-                            case 16:
-                                output_type = 0xD8; // fixext 16
-                                break;
-                            default:
-                                output_type = 0xC7; // ext 8
-                                fixed = false;
-                                break;
-                        }
-
-                    }
-                    else
-                    {
-                        output_type = 0xC4; // bin 8
-                        fixed = false;
-                    }
-
-                    oa->write_character(to_char_type(output_type));
-                    if (!fixed)
-                    {
-                        write_number(static_cast<std::uint8_t>(N));
-                    }
+                    // fixstr
+                    write_number(static_cast<std::uint8_t>(0xA0 | N));
+                }
+                else if (N <= (std::numeric_limits<std::uint8_t>::max)())
+                {
+                    // str 8
+                    oa->write_character(to_char_type(0xD9));
+                    write_number(static_cast<std::uint8_t>(N));
                 }
                 else if (N <= (std::numeric_limits<std::uint16_t>::max)())
                 {
-                    const std::uint8_t output_type = use_ext
-                                                     ? 0xC8 // ext 16
-                                                     : 0xC5; // bin 16
-
-                    oa->write_character(to_char_type(output_type));
+                    // str 16
+                    oa->write_character(to_char_type(0xDA));
                     write_number(static_cast<std::uint16_t>(N));
                 }
                 else if (N <= (std::numeric_limits<std::uint32_t>::max)())
                 {
-                    const std::uint8_t output_type = use_ext
-                                                     ? 0xC9 // ext 32
-                                                     : 0xC6; // bin 32
-
-                    oa->write_character(to_char_type(output_type));
+                    // str 32
+                    oa->write_character(to_char_type(0xDB));
                     write_number(static_cast<std::uint32_t>(N));
                 }
-
-                // step 1.5: if this is an ext type, write the subtype
-                if (use_ext)
-                {
-                    write_number(static_cast<std::int8_t>(j.m_data.m_value.binary->subtype()));
-                }
-
+		// step 1.5: write the particle byte.
+		oa->write_character (to_char_type (0x04));
                 // step 2: write the byte string
                 oa->write_characters(
                     reinterpret_cast<const CharType*>(j.m_data.m_value.binary->data()),
-                    N);
-
+                    N-1);
                 break;
             }
 
@@ -19436,7 +19441,7 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
         detail::parser_callback_t<basic_json>cb = nullptr,
         const bool allow_exceptions = true,
         const bool ignore_comments = false
-                                 )
+    )
     {
         return ::nlohmann::detail::parser<basic_json, InputAdapterType>(std::move(adapter),
                 std::move(cb), allow_exceptions, ignore_comments);
